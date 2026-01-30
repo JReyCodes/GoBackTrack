@@ -2,10 +2,10 @@ import React, { useState, useMemo } from 'react';
 
 function ResultsList({ results }) {
   const [collapsed, setCollapsed] = useState({});
-  const [expandedAddresses, setExpandedAddresses] = useState(new Set());
   const [categorizedAddresses, setCategorizedAddresses] = useState({});
   const [appointmentStatus, setAppointmentStatus] = useState({}); // 'Set' or 'No Set'
-  const [activeFilter, setActiveFilter] = useState(null); // null, 'all', 'Windows', 'Roofing', 'Siding'
+  const [notes, setNotes] = useState({}); // Notes for each address
+  const [activeFilter, setActiveFilter] = useState(null); // null, 'Windows', 'Roofing', 'Siding', 'gobacks', 'visited', 'set'
 
   // Group results by street
   const grouped = useMemo(() => {
@@ -27,7 +27,7 @@ function ResultsList({ results }) {
     return groups;
   }, [results]);
 
-    const hasBeenVisited = (address) => {
+  const hasBeenVisited = (address) => {
     return categorizedAddresses[address] || appointmentStatus[address];
   };
 
@@ -48,6 +48,9 @@ function ResultsList({ results }) {
       } else if (activeFilter === 'visited') {
         // Show addresses with either category OR status
         filteredRecords = records.filter(r => hasBeenVisited(r.address));
+      } else if (activeFilter === 'set') {
+        // Show only addresses with "Set" appointment status
+        filteredRecords = records.filter(r => appointmentStatus[r.address] === 'Set');
       } else {
         // Show only addresses with specific category
         filteredRecords = records.filter(r => categorizedAddresses[r.address] === activeFilter);
@@ -70,52 +73,42 @@ function ResultsList({ results }) {
     }));
   };
 
-  const toggleAddressExpansion = (address) => {
-    setExpandedAddresses(prev => {
-      const newSet = new Set(prev);
-      if (newSet.has(address)) {
-        newSet.delete(address);
-      } else {
-        newSet.add(address);
-      }
-      return newSet;
-    });
-  };
-
   const handleCategorySelection = (address, category) => {
-    setCategorizedAddresses(prev => ({
-      ...prev,
-      [address]: category
-    }));
+    setCategorizedAddresses(prev => {
+      const current = prev[address];
+      // Toggle off if clicking the same category, otherwise set new category
+      return {
+        ...prev,
+        [address]: current === category ? null : category
+      };
+    });
     
     // TODO: Add your logic here to save to database
-    console.log(`Address "${address}" categorized as: ${category}`);
+    console.log(`Address "${address}" categorized as: ${category || 'cleared'}`);
   };
 
   const handleAppointmentStatus = (address, status) => {
-    setAppointmentStatus(prev => ({
-      ...prev,
-      [address]: status
-    }));
+    setAppointmentStatus(prev => {
+      const current = prev[address];
+      // Toggle off if clicking the same status, otherwise set new status
+      return {
+        ...prev,
+        [address]: current === status ? null : status
+      };
+    });
     
     // TODO: Add your logic here to save to database
-    console.log(`Address "${address}" appointment status: ${status}`);
+    console.log(`Address "${address}" appointment status: ${status || 'cleared'}`);
   };
 
-  const clearCategory = (address) => {
-    setCategorizedAddresses(prev => {
-      const newCat = { ...prev };
-      delete newCat[address];
-      return newCat;
-    });
-  };
-
-  const clearAppointmentStatus = (address) => {
-    setAppointmentStatus(prev => {
-      const newStatus = { ...prev };
-      delete newStatus[address];
-      return newStatus;
-    });
+  const handleNoteChange = (address, value) => {
+    setNotes(prev => ({
+      ...prev,
+      [address]: value
+    }));
+    
+    // TODO: Add your logic here to save notes to database
+    console.log(`Notes for "${address}": ${value}`);
   };
 
   const getCategoryStats = () => {
@@ -124,7 +117,8 @@ function ResultsList({ results }) {
       Roofing: 0,
       Siding: 0,
       GoBacks: 0,
-      Visited: 0
+      Visited: 0,
+      Set: 0
     };
     
     // Track visited addresses (any with category OR status)
@@ -137,8 +131,11 @@ function ResultsList({ results }) {
     });
     
     // Count appointment statuses and add to visited
-    Object.keys(appointmentStatus).forEach(address => {
+    Object.entries(appointmentStatus).forEach(([address, status]) => {
       visitedAddresses.add(address);
+      if (status === 'Set') {
+        stats.Set++;
+      }
     });
     
     // Go Backs are addresses with categories BUT NO appointment status
@@ -191,6 +188,14 @@ function ResultsList({ results }) {
                 onClick={() => handleFilterClick('visited')}
               >
                 Visited: {stats.Visited}
+              </span>
+            )}
+            {stats.Set > 0 && (
+              <span 
+                className={`stat-badge set ${activeFilter === 'set' ? 'active' : ''}`}
+                onClick={() => handleFilterClick('set')}
+              >
+                Set: {stats.Set}
               </span>
             )}
             {stats.GoBacks > 0 && (
@@ -252,124 +257,96 @@ function ResultsList({ results }) {
               </span>
             </div>
 
-            {/* STREET RESULTS */}
+            {/* COMPACT MOBILE-FRIENDLY RESULTS */}
             {!isCollapsed && (
-              <div className="results-grid">
+              <div className="results-list-mobile">
                 {records.map((r, i) => {
-                  const isExpanded = expandedAddresses.has(r.address);
                   const category = categorizedAddresses[r.address];
                   const status = appointmentStatus[r.address];
+                  const note = notes[r.address] || '';
                   
                   return (
                     <div 
                       key={i} 
-                      className={`result-card ${isExpanded ? 'expanded' : ''} ${category ? 'categorized' : ''}`}
+                      className={`address-row ${category ? 'has-category' : ''} ${status ? 'has-status' : ''}`}
                     >
-                      <div 
-                        className="card-header"
-                        onClick={() => toggleAddressExpansion(r.address)}
-                      >
-                        <span className="expand-icon">
-                          {isExpanded ? '−' : '+'}
-                        </span>
+                      {/* LEFT: Address & Coordinates */}
+                      <div className="address-info">
+                        <div className="address-text">
+                          {r.house_number} {street}
+                        </div>
+                        <div className="coords-text">
+                          {r.latitude.toFixed(6)}, {r.longitude.toFixed(6)}
+                        </div>
                         
-                        <div className="card-title">
-                          <strong>
-                            {r.house_number} {street}
-                          </strong>
-
-                          <div className={`card-status ${category ? 'has-category' : ''}`}>
-                            {category ? (
-                              <div className="status-badges">
-                                <span className={`category-label ${category.toLowerCase()}`}>
-                                  ✓ {category}
-                                </span>
-                                {status && (
-                                  <span className={`status-label ${status.toLowerCase().replace(' ', '-')}`}>
-                                    {status === 'Set' ? '✓' : '✕'} {status}
-                                  </span>
-                                )}
-                              </div>
-                            ) : (
-                              <span className="coords">
-                                {r.latitude}, {r.longitude}
+                        {/* Status indicators below address on mobile */}
+                        {(category || status) && (
+                          <div className="status-indicators-mobile">
+                            {category && (
+                              <span className={`mini-badge ${category.toLowerCase()}`}>
+                                {category}
+                              </span>
+                            )}
+                            {status && (
+                              <span className={`mini-badge status-${status.toLowerCase().replace(' ', '-')}`}>
+                                {status}
                               </span>
                             )}
                           </div>
-                        </div>
+                        )}
                       </div>
 
-                      {isExpanded && (
-                        <div className="card-expanded-content">
-                          <div className="coords-full">
-                            <strong>Coordinates:</strong> {r.latitude}, {r.longitude}
-                          </div>
-                          
-                          <div className="category-label-section">
-                            <strong>Select Category:</strong>
-                          </div>
-                          
-                          <div className="category-buttons">
-                            <button
-                              className={`cat-btn windows ${category === 'Windows' ? 'active' : ''}`}
-                              onClick={() => handleCategorySelection(r.address, 'Windows')}
-                            >
-                              {category === 'Windows' ? '✓ ' : ''}Windows
-                            </button>
-                            <button
-                              className={`cat-btn roofing ${category === 'Roofing' ? 'active' : ''}`}
-                              onClick={() => handleCategorySelection(r.address, 'Roofing')}
-                            >
-                              {category === 'Roofing' ? '✓ ' : ''}Roofing
-                            </button>
-                            <button
-                              className={`cat-btn siding ${category === 'Siding' ? 'active' : ''}`}
-                              onClick={() => handleCategorySelection(r.address, 'Siding')}
-                            >
-                              {category === 'Siding' ? '✓ ' : ''}Siding
-                            </button>
-                          </div>
+                      {/* RIGHT: Category Buttons (W/R/S) */}
+                      <div className="category-buttons-compact">
+                        <button
+                          className={`compact-btn windows ${category === 'Windows' ? 'active' : ''}`}
+                          onClick={() => handleCategorySelection(r.address, 'Windows')}
+                          title="Windows"
+                        >
+                          W
+                        </button>
+                        <button
+                          className={`compact-btn roofing ${category === 'Roofing' ? 'active' : ''}`}
+                          onClick={() => handleCategorySelection(r.address, 'Roofing')}
+                          title="Roofing"
+                        >
+                          R
+                        </button>
+                        <button
+                          className={`compact-btn siding ${category === 'Siding' ? 'active' : ''}`}
+                          onClick={() => handleCategorySelection(r.address, 'Siding')}
+                          title="Siding"
+                        >
+                          S
+                        </button>
+                      </div>
 
-                          {category && (
-                            <button
-                              className="clear-category-btn"
-                              onClick={() => clearCategory(r.address)}
-                            >
-                              Clear Category
-                            </button>
-                          )}
+                      {/* BOTTOM: Appointment Status Buttons (Set / No Set) */}
+                      <div className="appointment-buttons-compact">
+                        <button
+                          className={`compact-appt-btn set ${status === 'Set' ? 'active' : ''}`}
+                          onClick={() => handleAppointmentStatus(r.address, 'Set')}
+                        >
+                          ✓ Set
+                        </button>
+                        <button
+                          className={`compact-appt-btn no-set ${status === 'No Set' ? 'active' : ''}`}
+                          onClick={() => handleAppointmentStatus(r.address, 'No Set')}
+                        >
+                          ✕ No Set
+                        </button>
+                      </div>
 
-                          <div className="appointment-section">
-                            <div className="category-label-section">
-                              <strong>Appointment Status:</strong>
-                            </div>
-                            
-                            <div className="appointment-buttons">
-                              <button
-                                className={`appt-btn set ${status === 'Set' ? 'active' : ''}`}
-                                onClick={() => handleAppointmentStatus(r.address, 'Set')}
-                              >
-                                {status === 'Set' ? '✓ ' : ''}Set
-                              </button>
-                              <button
-                                className={`appt-btn no-set ${status === 'No Set' ? 'active' : ''}`}
-                                onClick={() => handleAppointmentStatus(r.address, 'No Set')}
-                              >
-                                {status === 'No Set' ? '✕ ' : ''}No Set
-                              </button>
-                            </div>
-
-                            {status && (
-                              <button
-                                className="clear-status-btn"
-                                onClick={() => clearAppointmentStatus(r.address)}
-                              >
-                                Clear Status
-                              </button>
-                            )}
-                          </div>
-                        </div>
-                      )}
+                      {/* NOTES SECTION - Always Visible */}
+                      <div className="notes-section">
+                        <textarea
+                          className="notes-textarea"
+                          placeholder="Notes..."
+                          value={note}
+                          onChange={(e) => handleNoteChange(r.address, e.target.value)}
+                          rows={2}
+                        />
+                      </div>
                     </div>
                   );
                 })}
